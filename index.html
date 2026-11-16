@@ -90,6 +90,7 @@ td small{color:var(--mute);font-weight:400;margin-left:6px}
     </div>
   </div>
   <div class="chart-box"><canvas id="chart"></canvas></div>
+  <div class="err" id="chartMsg"></div>
   <div class="lbl" style="margin-top:8px">Shows today's holdings priced at past market values, so it reflects what you hold now rather than your actual buy dates.</div>
 </section>
 </main>
@@ -114,7 +115,7 @@ const save = () => { try { localStorage.setItem('holdings', JSON.stringify(holdi
 async function api(path) {
   let r;
   try { r = await fetch(API + path); }
-  catch (e) { throw new Error('Could not reach CoinGecko. Check your internet, or turn off ad-blockers / shields for this site.'); }
+  catch (e) { throw new Error('Could not reach CoinGecko. This is usually the free rate limit, so wait a minute. Otherwise check your internet or turn off ad-blockers.'); }
   if (r.status === 429) throw new Error('CoinGecko rate limit reached. Wait a minute and try again.');
   if (!r.ok) throw new Error('CoinGecko request failed (' + r.status + ').');
   return r.json();
@@ -216,24 +217,51 @@ $('results').addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search')) $('results').hidden = true; });
 
 /* ---------- Historical trend ---------- */
+const chartCache = {};
+try { Object.assign(chartCache, JSON.parse(localStorage.getItem('chartCache') || '{}')); } catch (e) {}
+const CACHE_MS = {1: 5 * 60e3, 7: 15 * 60e3, 30: 30 * 60e3, 90: 60 * 60e3};
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let chartBusy = false, chartAgain = false, retryTimer;
+
+async function getHistory(id, days) {
+  const key = id + '|' + days, c = chartCache[key];
+  if (c && Date.now() - c.t < (CACHE_MS[days] || 600000)) return c.prices;
+  let lastErr;
+  for (let a = 0; a < 3; a++) {
+    try {
+      const d = await api(`/coins/${id}/market_chart?vs_currency=usd&days=${days}`);
+      chartCache[key] = {t: Date.now(), prices: d.prices};
+      try { localStorage.setItem('chartCache', JSON.stringify(chartCache)); } catch (e) {}
+      return d.prices;
+    } catch (e) { lastErr = e; if (a < 2) await sleep(5000 * (a + 1)); }
+  }
+  if (c) return c.prices;   // old saved data is better than an empty chart
+  throw lastErr;
+}
+
 async function loadChart() {
-  const ids = [...new Set(holdings.map(h => h.id))];
-  if (!ids.length) { drawChart([], []); return; }
-  try {
-    const series = {};
-    for (const id of ids) {   // sequential to stay within the free-tier rate limit
-      const d = await api(`/coins/${id}/market_chart?vs_currency=usd&days=${range}`);
-      series[id] = d.prices;
+  if (chartBusy) { chartAgain = true; return; }
+  chartBusy = true; clearTimeout(retryTimer);
+  do {
+    chartAgain = false;
+    const ids = [...new Set(holdings.map(h => h.id))], days = range;
+    if (!ids.length) { drawChart([], []); $('chartMsg').textContent = ''; break; }
+    $('chartMsg').textContent = 'Loading chart…';
+    try {
+      const series = {};
+      for (const id of ids) series[id] = await getHistory(id, days);   // one at a time, gently
+      const times = series[ids[0]].map(p => p[0]);
+      const totals = times.map((t, k) => holdings.reduce((sum, h) => {
+        const s = series[h.id]; return sum + s[Math.min(k, s.length - 1)][1] * h.amount;
+      }, 0));
+      if (days === range) drawChart(times, totals);
+      $('chartMsg').textContent = '';
+    } catch (e) {
+      $('chartMsg').textContent = 'Chart could not load (' + e.message + ') Retrying in 30 seconds…';
+      retryTimer = setTimeout(loadChart, 30000);
     }
-    const base = series[ids[0]];
-    const times = base.map(p => p[0]);
-    const totals = times.map((t, k) => holdings.reduce((sum, h) => {
-      const s = series[h.id]; let j = Math.min(k, s.length - 1);
-      return sum + s[j][1] * h.amount;
-    }, 0));
-    drawChart(times, totals);
-    $('apiErr').textContent = prices._t && $('apiErr').textContent.startsWith('Coin') ? $('apiErr').textContent : '';
-  } catch (e) { $('apiErr').textContent = e.message; }
+  } while (chartAgain);
+  chartBusy = false;
 }
 function drawChart(times, totals) {
   const style = getComputedStyle(document.documentElement);
