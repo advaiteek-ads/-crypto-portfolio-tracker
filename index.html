@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crypto Portfolio Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#eef1f5;--panel:#fff;--ink:#14213d;--mute:#6b7690;--line:#d9dfe8;--up:#0a8f5b;--down:#c8302f;--accent:#2b4acb}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1523;--panel:#171f33;--ink:#e8ecf5;--mute:#8a95b0;--line:#27324d;--up:#3ccf91;--down:#ff6b6a;--accent:#7f96ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'Schibsted Grotesk',system-ui,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 60px}
+header{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+h1{margin:0;font-size:22px}
+.status{color:var(--mute);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button,select{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:6px 12px}
+button:hover,select:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:16px}
+.total{display:flex;flex-wrap:wrap;gap:32px;align-items:baseline}
+.total .big{font-size:44px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.lbl{color:var(--mute);font-size:13px}
+.up{color:var(--up)}.down{color:var(--down)}
+form{display:grid;grid-template-columns:2fr 1fr 1.2fr 1.2fr auto;gap:10px;align-items:end}
+label{display:block;font-size:13px;color:var(--mute);margin-bottom:3px}
+input{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.search{position:relative}
+.results{position:absolute;z-index:5;left:0;right:0;top:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;max-height:220px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.15)}
+.results div{padding:7px 10px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.results div:hover{background:var(--bg)}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:820px}
+th,td{padding:10px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--mute);font-size:13px}
+th:first-child,td:first-child{text-align:left}
+td:first-child{font-weight:500}
+td small{color:var(--mute);font-weight:400;margin-left:6px}
+.x{border:none;background:none;color:var(--mute);padding:2px 6px}
+.x:hover{color:var(--down)}
+.chart-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.ranges button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chart-box{position:relative;height:280px}
+.msg{color:var(--mute);padding:20px 0;text-align:center}
+.err{color:var(--down);font-size:13px;margin-top:6px;min-height:18px}
+@media(max-width:700px){form{grid-template-columns:1fr 1fr}.search,form button{grid-column:1/-1}.total .big{font-size:34px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Crypto Portfolio Simulator</h1>
+  <div class="status"><span id="updated">Not updated yet</span>
+    <select id="cur" aria-label="Currency"><option value="usd">USD $</option><option value="inr">INR ₹</option><option value="eur">EUR €</option><option value="gbp">GBP £</option></select>
+    <button id="refresh">Refresh now</button></div>
+</header>
+
+<section class="panel total" aria-live="polite">
+  <div><div class="lbl">Current value</div><div class="big" id="tValue">0</div></div>
+  <div><div class="lbl">Amount invested</div><div id="tCost" style="font-size:20px">0</div></div>
+  <div><div class="lbl">Profit / loss</div><div id="tPnl" style="font-size:20px">0</div></div>
+</section>
+
+<section class="panel">
+  <form id="addForm" autocomplete="off">
+    <div class="search"><label for="q">Coin</label><input id="q" placeholder="Search bitcoin, eth, solana…"><div class="results" id="results" hidden></div></div>
+    <div><label for="amt">Amount held</label><input id="amt" type="number" step="any" min="0" placeholder="0.5"></div>
+    <div><label for="dt">Purchase date</label><input id="dt" type="date"></div>
+    <div><label for="buy" id="buyLbl">Buy price</label><input id="buy" type="number" step="any" min="0" placeholder="Empty = price on that date"></div>
+    <button class="primary" type="submit">Add holding</button>
+  </form>
+  <div class="err" id="formErr"></div>
+  <div class="lbl">Simulator tip: pick a coin and a past date, leave the buy price empty, and see what that investment would be worth today (free plan covers the last 365 days).</div>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Asset</th><th>Bought</th><th>Amount</th><th>Buy price</th><th>Price now</th><th>24h</th><th>Value</th><th>P&amp;L</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="msg" id="empty">No holdings yet. Search for a coin above, or <button id="demo">load sample portfolio</button></div>
+  <div class="err" id="apiErr"></div>
+</section>
+
+<section class="panel" id="pieP" hidden>
+  <strong>Allocation by current value</strong>
+  <div class="chart-box"><canvas id="pie"></canvas></div>
+</section>
+
+<section class="panel">
+  <div class="chart-head">
+    <strong>Portfolio value vs amount invested</strong>
+    <div class="ranges" id="ranges">
+      <button data-d="1">1D</button><button data-d="7" class="on">7D</button><button data-d="30">30D</button><button data-d="90">90D</button><button data-d="365">1Y</button>
+    </div>
+  </div>
+  <div class="chart-box"><canvas id="chart"></canvas></div>
+  <div class="err" id="chartMsg"></div>
+  <div class="lbl">A holding only counts from its purchase date. Buy prices are converted to the selected currency at today's exchange rate. For learning only, not financial advice.</div>
+</section>
+</main>
+
+<script>
+const API = 'https://api.coingecko.com/api/v3';
+const REFRESH_MS = 60000;
+const $ = id => document.getElementById(id);
+const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
+
+let holdings = load('holdings', []), prices = load('prices', {}), rates = load('rates', {usd: 1});
+let cur = load('cur', 'usd'), range = 7, picked = null, chart = null, pie = null;
+const COLORS = ['#2b4acb', '#0a8f5b', '#e8a21a', '#c8302f', '#7b4bd1', '#12a3b8', '#e0559b', '#6b7690'];
+
+const money = n => {
+  const o = {style: 'currency', currency: cur.toUpperCase()};
+  if (Math.abs(n) < 1 && n !== 0) o.maximumSignificantDigits = 3;
+  return n.toLocaleString(cur === 'inr' ? 'en-IN' : 'en-US', o);
+};
+const pct = n => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+const cls = n => n >= 0 ? 'up' : 'down';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const conv = (amt, from) => (rates[from] && rates[cur]) ? amt / rates[from] * rates[cur] : amt;
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'}) : '–';
+
+async function api(path) {
+  let r;
+  try { r = await fetch(API + path); }
+  catch (e) { throw new Error('Could not reach CoinGecko. This is usually the free rate limit, so wait a minute. Otherwise check your internet or turn off ad-blockers.'); }
+  if (r.status === 429) throw new Error('CoinGecko rate limit reached. Wait a minute and try again.');
+  if (!r.ok) throw new Error('CoinGecko request failed (' + r.status + ').');
+  return r.json();
+}
+
+/* ---------- Prices ---------- */
+async function refreshPrices() {
+  const ids = [...new Set(['bitcoin', ...holdings.map(h => h.id)])];   // bitcoin gives us exchange rates
+  $('updated').textContent = 'Loading prices…';
+  try {
+    const data = await api('/simple/price?ids=' + ids.join(',') + '&vs_currencies=usd,inr,eur,gbp&include_24hr_change=true');
+    ids.forEach(id => { if (data[id]) prices[id] = data[id]; });
+    ['usd', 'inr', 'eur', 'gbp'].forEach(c => { if (data.bitcoin) rates[c] = data.bitcoin[c] / data.bitcoin.usd; });
+    prices._t = Date.now();
+    $('apiErr').textContent = '';
+    store('prices', prices); store('rates', rates);
+  } catch (e) {
+    $('apiErr').textContent = e.message + (prices._t ? ' Showing last saved prices.' : '');
+  }
+  render();
+}
+
+/* ---------- Render ---------- */
+function render() {
+  let value = 0, cost = 0; const slices = [];
+  $('buyLbl').textContent = 'Buy price (' + cur.toUpperCase() + ' each)';
+  $('rows').innerHTML = holdings.map((h, i) => {
+    const p = prices[h.id], now = p ? p[cur] : null, ch = p ? p[cur + '_24h_change'] : null;
+    const buy = conv(h.buy, h.cur || 'usd'), c = buy * h.amount;
+    const v = now == null ? null : now * h.amount;
+    if (v !== null) { value += v; slices.push({label: h.symbol, value: v}); }
+    cost += c;
+    const pnl = v === null ? null : v - c, pp = pnl === null || c === 0 ? null : pnl / c * 100;
+    return `<tr>
+      <td>${esc(h.name)}<small>${esc(h.symbol)}</small></td><td>${fmtDate(h.date)}</td>
+      <td>${h.amount}</td><td>${money(buy)}</td>
+      <td>${now == null ? '…' : money(now)}</td>
+      <td class="${ch == null ? '' : cls(ch)}">${ch == null ? '…' : pct(ch)}</td>
+      <td>${v === null ? '…' : money(v)}</td>
+      <td class="${pnl === null ? '' : cls(pnl)}">${pnl === null ? '…' : money(pnl) + (pp === null ? '' : ' (' + pct(pp) + ')')}</td>
+      <td><button class="x" data-i="${i}" aria-label="Remove ${esc(h.name)}">✕</button></td></tr>`;
+  }).join('');
+  $('empty').hidden = holdings.length > 0;
+  const pnl = value - cost;
+  $('tValue').textContent = money(value);
+  $('tCost').textContent = money(cost);
+  $('tPnl').innerHTML = `<span class="${cls(pnl)}">${money(pnl)}${cost ? ' (' + pct(pnl / cost * 100) + ')' : ''}</span>`;
+  $('updated').textContent = prices._t ? 'Updated ' + new Date(prices._t).toLocaleTimeString() : 'Not updated yet';
+  drawPie(slices, value);
+}
+
+function drawPie(slices, total) {
+  $('pieP').hidden = !slices.length;
+  if (pie) { pie.destroy(); pie = null; }
+  if (!slices.length) return;
+  const merged = {};
+  slices.forEach(s => merged[s.label] = (merged[s.label] || 0) + s.value);
+  const labels = Object.keys(merged), data = labels.map(l => merged[l]);
+  const st = getComputedStyle(document.documentElement);
+  pie = new Chart($('pie'), {
+    type: 'doughnut',
+    data: {labels: labels.map((l, i) => `${l}  ${(data[i] / total * 100).toFixed(1)}%`), datasets: [{data, backgroundColor: COLORS, borderColor: st.getPropertyValue('--panel').trim(), borderWidth: 2}]},
+    options: {responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {legend: {position: 'right', labels: {color: st.getPropertyValue('--ink').trim()}}, tooltip: {callbacks: {label: c => ' ' + money(c.parsed)}}}}
+  });
+}
+
+/* ---------- Add / remove ---------- */
+$('addForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = m => $('formErr').textContent = m;
+  const amount = parseFloat($('amt').value), date = $('dt').value;
+  let buy = parseFloat($('buy').value);
+  if (!picked) return err('Pick a coin from the search results.');
+  if (!(amount > 0)) return err('Enter an amount greater than 0.');
+  if (date > todayStr()) return err('The purchase date cannot be in the future.');
+  if (!rates[cur]) return err('Prices are still loading. Try again in a moment.');
+  if (isNaN(buy)) {
+    if (!date) return err('Enter a buy price, or a purchase date to look the price up.');
+    err('Looking up the price on that day…');
+    try {
+      const [y, m, d] = date.split('-');
+      const r = await api(`/coins/${picked.id}/history?date=${d}-${m}-${y}&localization=false`);
+      buy = r.market_data && r.market_data.current_price[cur];
+      if (!buy) throw new Error('No price found for that date.');
+    } catch (x) { return err(x.message + ' Type the buy price yourself. (The free plan only covers the last 365 days.)'); }
+  }
+  err('');
+  holdings.push({id: picked.id, name: picked.name, symbol: picked.symbol.toUpperCase(), amount, buy, cur, date: date || null});
+  picked = null; $('addForm').reset(); $('dt').value = todayStr(); store('holdings', holdings);
+  render(); refreshPrices(); loadChart();
+});
+$('rows').addEventListener('click', e => {
+  const b = e.target.closest('.x'); if (!b) return;
+  holdings.splice(+b.dataset.i, 1); store('holdings', holdings); render(); loadChart();
+});
+$('demo').addEventListener('click', () => {
+  const ago = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  holdings = [
+    {id:'bitcoin', name:'Bitcoin', symbol:'BTC', amount:0.25, buy:60000, cur:'usd', date:ago(120)},
+    {id:'ethereum', name:'Ethereum', symbol:'ETH', amount:2, buy:2500, cur:'usd', date:ago(60)},
+    {id:'solana', name:'Solana', symbol:'SOL', amount:15, buy:120, cur:'usd', date:ago(20)}
+  ];
+  store('holdings', holdings); render(); refreshPrices(); loadChart();
+});
+$('cur').addEventListener('change', () => { cur = $('cur').value; store('cur', cur); render(); loadChart(); });
+
+/* ---------- Coin search ---------- */
+let timer;
+$('q').addEventListener('input', () => {
+  picked = null; clearTimeout(timer);
+  const q = $('q').value.trim();
+  if (q.length < 2) { $('results').hidden = true; return; }
+  timer = setTimeout(async () => {
+    try {
+      const d = await api('/search?query=' + encodeURIComponent(q));
+      $('results').innerHTML = d.coins.slice(0, 8).map(c => `<div data-id="${esc(c.id)}" data-n="${esc(c.name)}" data-s="${esc(c.symbol)}"><span>${esc(c.name)}</span><span class="lbl">${esc(c.symbol)}</span></div>`).join('') || '<div>No matches</div>';
+      $('results').hidden = false;
+    } catch (e) { $('formErr').textContent = e.message; }
+  }, 350);
+});
+$('results').addEventListener('click', e => {
+  const d = e.target.closest('[data-id]'); if (!d) return;
+  picked = {id: d.dataset.id, name: d.dataset.n, symbol: d.dataset.s};
+  $('q').value = picked.name + ' (' + picked.symbol.toUpperCase() + ')';
+  $('results').hidden = true; $('formErr').textContent = '';
+});
+document.addEventListener('click', e => { if (!e.target.closest('.search')) $('results').hidden = true; });
+
+/* ---------- Historical trend (prices cached, always fetched in USD) ---------- */
+const chartCache = load('chartCache', {});
+const CACHE_MS = {1: 5 * 60e3, 7: 15 * 60e3, 30: 30 * 60e3, 90: 60 * 60e3, 365: 3 * 60 * 60e3};
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let chartBusy = false, chartAgain = false, retryTimer;
+
+async function getHistory(id, days) {
+  const key = id + '|' + days, c = chartCache[key];
+  if (c && Date.now() - c.t < (CACHE_MS[days] || 600000)) return c.prices;
+  let lastErr;
+  for (let a = 0; a < 3; a++) {
+    try {
+      const d = await api(`/coins/${id}/market_chart?vs_currency=usd&days=${days}`);
+      chartCache[key] = {t: Date.now(), prices: d.prices};
+      store('chartCache', chartCache);
+      return d.prices;
+    } catch (e) { lastErr = e; if (a < 2) await sleep(5000 * (a + 1)); }
+  }
+  if (c) return c.prices;   // old saved data beats an empty chart
+  throw lastErr;
+}
+
+async function loadChart() {
+  if (chartBusy) { chartAgain = true; return; }
+  chartBusy = true; clearTimeout(retryTimer);
+  do {
+    chartAgain = false;
+    const ids = [...new Set(holdings.map(h => h.id))], days = range;
+    if (!ids.length) { drawChart([], [], []); $('chartMsg').textContent = ''; break; }
+    $('chartMsg').textContent = 'Loading chart…';
+    try {
+      const series = {};
+      for (const id of ids) series[id] = await getHistory(id, days);   // one at a time, gently
+      const times = series[ids[0]].map(p => p[0]), vals = [], costs = [];
+      times.forEach((t, k) => {
+        let v = 0, c = 0, any = false;
+        holdings.forEach(h => {
+          if (h.date && new Date(h.date + 'T00:00:00').getTime() > t) return;   // not bought yet
+          const s = series[h.id]; any = true;
+          v += s[Math.min(k, s.length - 1)][1] * h.amount * (rates[cur] || 1);
+          c += conv(h.buy, h.cur || 'usd') * h.amount;
+        });
+        vals.push(any ? v : null); costs.push(any ? c : null);
+      });
+      if (days === range) drawChart(times, vals, costs);
+      $('chartMsg').textContent = '';
+    } catch (e) {
+      $('chartMsg').textContent = 'Chart could not load (' + e.message + ') Retrying in 30 seconds…';
+      retryTimer = setTimeout(loadChart, 30000);
+    }
+  } while (chartAgain);
+  chartBusy = false;
+}
+function drawChart(times, vals, costs) {
+  const st = getComputedStyle(document.documentElement), v = n => st.getPropertyValue(n).trim();
+  const labels = times.map(t => new Date(t).toLocaleString('en-US', range <= 1 ? {hour:'numeric', minute:'2-digit'} : range > 90 ? {month:'short', year:'2-digit'} : {month:'short', day:'numeric'}));
+  if (chart) chart.destroy();
+  chart = new Chart($('chart'), {
+    type: 'line',
+    data: {labels, datasets: [
+      {label: 'Value', data: vals, borderColor: v('--accent'), backgroundColor: v('--accent') + '22', fill: true, pointRadius: 0, tension: .25, borderWidth: 2},
+      {label: 'Invested', data: costs, borderColor: v('--mute'), borderDash: [6, 4], pointRadius: 0, stepped: true, borderWidth: 1.5}
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {labels: {color: v('--mute')}}, tooltip: {mode: 'index', intersect: false, callbacks: {label: c => ' ' + c.dataset.label + ': ' + money(c.parsed.y)}}},
+      scales: {x: {ticks: {color: v('--mute'), maxTicksLimit: 6}, grid: {display: false}}, y: {ticks: {color: v('--mute'), callback: n => money(n)}, grid: {color: v('--line')}}}
+    }
+  });
+}
+$('ranges').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  range = +b.dataset.d;
+  [...$('ranges').children].forEach(x => x.classList.toggle('on', x === b));
+  loadChart();
+});
+
+/* ---------- Start ---------- */
+$('refresh').addEventListener('click', () => { refreshPrices(); loadChart(); });
+setInterval(() => { if (!document.hidden) refreshPrices(); }, REFRESH_MS);
+$('cur').value = cur; $('dt').value = todayStr(); $('dt').max = todayStr();
+render();
+refreshPrices().then(loadChart);
+</script>
+</body>
+</html>
